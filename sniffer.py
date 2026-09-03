@@ -6,7 +6,7 @@ from datetime import datetime
 # Suppress scapy loading & runtime warnings
 logging.getLogger("scapy.loading").setLevel(logging.ERROR)
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
-from scapy.all import Ether, IP, TCP, UDP, ICMP, ARP, Raw, sniff, wrpcap
+from scapy.all import conf, Ether, IP, TCP, UDP, ICMP, ARP, Raw, sniff, wrpcap
 
 
 def format_payload(payload_bytes: bytes, max_len: int = 64) -> str:
@@ -118,19 +118,30 @@ def main():
     print("[*] Starting live packet capture...\n")
 
     try:
-        sniff(
-            filter=bpf_filter,
-            prn=lambda pkt: packet_handler(pkt, captured_packets),
-            count=args.count,
-            store=bool(args.output),
-        )
+        try:
+            sniff(
+                filter=bpf_filter,
+                prn=lambda pkt: packet_handler(pkt, captured_packets),
+                count=args.count,
+                store=bool(args.output),
+            )
+        except RuntimeError:
+            # Fallback to Layer 3 raw socket if Npcap/WinPcap is not installed
+            sniff(
+                L2socket=conf.L3socket,
+                prn=lambda pkt: packet_handler(pkt, captured_packets),
+                count=args.count,
+                store=bool(args.output),
+            )
     except KeyboardInterrupt:
         print("\n[!] Sniffing stopped by user.")
     except (PermissionError, OSError, RuntimeError) as e:
-        print(f"\n[!] Live capture unavailable without Admin / Npcap ({e.__class__.__name__}).")
+        print(f"\n[!] Live capture requires Administrator privileges on Windows ({e.__class__.__name__}).")
         print("[*] Automatically falling back to DEMO MODE to demonstrate packet dissection:\n")
         run_demo(args.output)
-        print("\n[*] Note: To sniff LIVE traffic, open PowerShell / CMD as Administrator with Npcap installed.")
+        print("\n[*] TO SNIFF REAL-TIME PACKETS:")
+        print("    Run this in your terminal to open an Administrator capture window:")
+        print('    powershell -Command "Start-Process cmd -ArgumentList \'/k cd /d %cd% && python raw_socket_sniffer.py 20\' -Verb RunAs"')
 
     if args.output and captured_packets:
         wrpcap(args.output, captured_packets)
